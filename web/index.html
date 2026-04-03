@@ -25,36 +25,39 @@
         <section id="filters" aria-label="Search filters">
             <div class="filter-group">
                 <h3>Item details filters</h3>
-                <label><input type="checkbox" name="item_bool_details" value="is_new"> New</label>
-                <label><input type="checkbox" name="item_bool_details" value="is_preowned"> Pre-owned</label>
-                <label><input type="checkbox" name="item_bool_details" value="is_preorder"> Pre-order</label>
-                <label><input type="checkbox" name="item_bool_details" value="is_backorder"> Back-order</label>
-                <label><input type="checkbox" name="item_bool_details" value="has_store_bonus"> w/ Store Bonus</label>
-                <label><input type="checkbox" name="item_bool_details" value="is_amiami_limited"> Amiami Limited</label>
-                <label><input type="checkbox" name="item_bool_details" value="is_age_limited"> Age Limited</label>
-                <label><input type="checkbox" name="item_bool_details" value="has_preorder_bonus"> w/ Preorder Bonus</label>
-                <label><input type="checkbox" name="item_bool_details" value="is_on_sale"> On Sale</label>
-                <label><input type="checkbox" name="item_bool_details" value="is_preowned_sale"> Preowned Sale</label>
+                <p class="tri-state-hint">Click to cycle: ignore, include, exclude.</p>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_new"> New</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_preowned"> Pre-owned</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_preorder"> Pre-order</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_backorder"> Back-order</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="has_store_bonus"> w/ Store Bonus</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_amiami_limited"> Amiami Limited</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_age_limited"> Age Limited</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="has_preorder_bonus"> w/ Preorder Bonus</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_on_sale"> On Sale</label>
+                <label><input type="checkbox" data-tristate="true" name="item_bool_details" value="is_preowned_sale"> Preowned Sale</label>
             </div>
 
             <div class="filter-group">
                 <h3>Item condition filters</h3>
-                <label><input type="checkbox" name="item_condition" value=""> New</label>
-                <label><input type="checkbox" name="item_condition" value="A"> A</label>
-                <label><input type="checkbox" name="item_condition" value="A-"> A-</label>
-                <label><input type="checkbox" name="item_condition" value="B+"> B+</label>
-                <label><input type="checkbox" name="item_condition" value="B"> B</label>
-                <label><input type="checkbox" name="item_condition" value="C"> C</label>
-                <label><input type="checkbox" name="item_condition" value="J"> J</label>
+                <p class="tri-state-hint">Click to cycle: ignore, include, exclude.</p>
+                <label><input type="checkbox" data-tristate="true" name="item_condition" value=""> New</label>
+                <label><input type="checkbox" data-tristate="true" name="item_condition" value="A"> A</label>
+                <label><input type="checkbox" data-tristate="true" name="item_condition" value="A-"> A-</label>
+                <label><input type="checkbox" data-tristate="true" name="item_condition" value="B+"> B+</label>
+                <label><input type="checkbox" data-tristate="true" name="item_condition" value="B"> B</label>
+                <label><input type="checkbox" data-tristate="true" name="item_condition" value="C"> C</label>
+                <label><input type="checkbox" data-tristate="true" name="item_condition" value="J"> J</label>
             </div>
 
             <div class="filter-group">
                 <h3>Box condition filters</h3>
-                <label><input type="checkbox" name="box_condition" value=""> New</label>
-                <label><input type="checkbox" name="box_condition" value="A"> A</label>
-                <label><input type="checkbox" name="box_condition" value="B"> B</label>
-                <label><input type="checkbox" name="box_condition" value="C"> C</label>
-                <label><input type="checkbox" name="box_condition" value="N"> N</label>
+                <p class="tri-state-hint">Click to cycle: ignore, include, exclude.</p>
+                <label><input type="checkbox" data-tristate="true" name="box_condition" value=""> New</label>
+                <label><input type="checkbox" data-tristate="true" name="box_condition" value="A"> A</label>
+                <label><input type="checkbox" data-tristate="true" name="box_condition" value="B"> B</label>
+                <label><input type="checkbox" data-tristate="true" name="box_condition" value="C"> C</label>
+                <label><input type="checkbox" data-tristate="true" name="box_condition" value="N"> N</label>
             </div>
 
             <div class="filter-group">
@@ -63,7 +66,7 @@
                 <input type="number" id="minPrice" placeholder="Min" min="0" max="10000" step="any" value="0.001">
 
                 <label for="maxPrice">Price Max:</label>
-                <input type="number" id="maxPrice" placeholder="Max" min="0" max="10000" step="any" value="200">
+                <input type="number" id="maxPrice" placeholder="Max" min="0" max="10000" step="any" value="10000">
             </div>
 
             <div class="filter-group">

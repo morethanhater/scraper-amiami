@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
         itemsCount: document.getElementById('itemsCount'),
         itemsTableBody: document.getElementById('itemsTableBody'),
         sortableHeaders: Array.from(document.querySelectorAll('.sortable')),
-        filterCheckboxes: Array.from(document.querySelectorAll('input[type="checkbox"]')),
+        triStateCheckboxes: Array.from(document.querySelectorAll('input[data-tristate="true"]')),
         imageModal: document.getElementById('imageModal'),
         imageModalBackdrop: document.getElementById('imageModalBackdrop'),
         imageModalClose: document.getElementById('imageModalClose'),
@@ -117,6 +117,17 @@ document.addEventListener('DOMContentLoaded', () => {
         Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map((element) => element.value)
     );
 
+    const getTriStateValues = (name, targetState) => (
+        Array.from(document.querySelectorAll(`input[name="${name}"][data-tristate="true"]`))
+            .filter((element) => element.dataset.state === targetState)
+            .map((element) => element.value)
+    );
+
+    const getTriStateFilters = (name) => ({
+        include: getTriStateValues(name, 'include'),
+        exclude: getTriStateValues(name, 'exclude'),
+    });
+
     const parsePriceInput = (value, fallback) => parseFloat(value.replace(',', '.')) || fallback;
 
     const matchesSearchQuery = (item, query) => (
@@ -130,20 +141,31 @@ document.addEventListener('DOMContentLoaded', () => {
         || item.description.toLowerCase().includes(query)
     );
 
-    const matchesConditionFilters = (item, itemConditions, boxConditions) => {
-        const matchesItemCondition = itemConditions.length === 0 || itemConditions.includes(item.item_condition);
-        const matchesBoxCondition = boxConditions.length === 0 || boxConditions.includes(item.box_condition);
+    const matchesConditionFilters = (item, itemConditionFilters, boxConditionFilters) => {
+        const matchesIncludedItemCondition = itemConditionFilters.include.length === 0
+            || itemConditionFilters.include.includes(item.item_condition);
+        const matchesExcludedItemCondition = !itemConditionFilters.exclude.includes(item.item_condition);
+        const matchesIncludedBoxCondition = boxConditionFilters.include.length === 0
+            || boxConditionFilters.include.includes(item.box_condition);
+        const matchesExcludedBoxCondition = !boxConditionFilters.exclude.includes(item.box_condition);
+
+        const matchesItemCondition = matchesIncludedItemCondition && matchesExcludedItemCondition;
+        const matchesBoxCondition = matchesIncludedBoxCondition && matchesExcludedBoxCondition;
         return matchesItemCondition && matchesBoxCondition;
     };
 
-    const matchesDetailFilters = (item, itemBoolDetails) => {
-        const requireStrictlyNew = itemBoolDetails.includes('is_new');
-        const positiveItemBoolDetails = itemBoolDetails.filter(filter => filter !== 'is_new');
-        const matchesNew = !requireStrictlyNew || isStrictlyNewItem(item);
-        const matchesBool = positiveItemBoolDetails.length === 0
-            || positiveItemBoolDetails.every(filter => item[filter] === true);
+    const matchesDetailFilters = (item, itemBoolDetailFilters) => {
+        const requireStrictlyNew = itemBoolDetailFilters.include.includes('is_new');
+        const excludeStrictlyNew = itemBoolDetailFilters.exclude.includes('is_new');
+        const positiveIncludedItemBoolDetails = itemBoolDetailFilters.include.filter(filter => filter !== 'is_new');
+        const positiveExcludedItemBoolDetails = itemBoolDetailFilters.exclude.filter(filter => filter !== 'is_new');
+        const matchesNew = (!requireStrictlyNew || isStrictlyNewItem(item))
+            && (!excludeStrictlyNew || !isStrictlyNewItem(item));
+        const matchesIncludedBool = positiveIncludedItemBoolDetails.length === 0
+            || positiveIncludedItemBoolDetails.every(filter => item[filter] === true);
+        const matchesExcludedBool = positiveExcludedItemBoolDetails.every(filter => item[filter] !== true);
 
-        return matchesNew && matchesBool;
+        return matchesNew && matchesIncludedBool && matchesExcludedBool;
     };
 
     const matchesPriceFilter = (item, minPrice, maxPrice) => {
@@ -223,9 +245,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const filterData = () => {
         const query = elements.searchInput.value.toLowerCase();
-        const itemConditions = getSelectedFilterValues('item_condition');
-        const boxConditions = getSelectedFilterValues('box_condition');
-        const itemBoolDetails = getSelectedFilterValues('item_bool_details');
+        const itemConditionFilters = getTriStateFilters('item_condition');
+        const boxConditionFilters = getTriStateFilters('box_condition');
+        const itemBoolDetailFilters = getTriStateFilters('item_bool_details');
         const minPrice = parsePriceInput(elements.minPriceInput.value, 0.0);
         const maxPrice = parsePriceInput(elements.maxPriceInput.value, Infinity);
         const minDiscount = parsePriceInput(elements.minDiscountInput.value, 0.0);
@@ -233,8 +255,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return state.jsonData.filter(item => (
             matchesSearchQuery(item, query)
-            && matchesConditionFilters(item, itemConditions, boxConditions)
-            && matchesDetailFilters(item, itemBoolDetails)
+            && matchesConditionFilters(item, itemConditionFilters, boxConditionFilters)
+            && matchesDetailFilters(item, itemBoolDetailFilters)
             && matchesPriceFilter(item, minPrice, maxPrice)
             && matchesDiscountFilter(item, minDiscount, maxDiscount)
         ));
@@ -296,6 +318,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }, INPUT_DEBOUNCE_MS);
     };
 
+    const applyTriStateAppearance = (checkbox) => {
+        const label = checkbox.closest('label');
+        const stateValue = checkbox.dataset.state || 'ignore';
+
+        checkbox.checked = stateValue === 'include';
+        checkbox.indeterminate = stateValue === 'exclude';
+        checkbox.setAttribute(
+            'aria-checked',
+            stateValue === 'exclude' ? 'mixed' : (stateValue === 'include' ? 'true' : 'false'),
+        );
+
+        if (label) {
+            label.classList.remove('tri-state-ignore', 'tri-state-include', 'tri-state-exclude');
+            label.classList.add(`tri-state-${stateValue}`);
+        }
+    };
+
+    const advanceTriState = (checkbox) => {
+        const currentState = checkbox.dataset.state || 'ignore';
+        const nextState = currentState === 'ignore'
+            ? 'include'
+            : (currentState === 'include' ? 'exclude' : 'ignore');
+
+        checkbox.dataset.state = nextState;
+        applyTriStateAppearance(checkbox);
+    };
+
+    const initializeTriStateCheckboxes = () => {
+        elements.triStateCheckboxes.forEach((checkbox) => {
+            checkbox.dataset.state = 'ignore';
+            applyTriStateAppearance(checkbox);
+        });
+    };
+
     const registerInputListeners = () => {
         elements.searchInput.addEventListener('input', () => {
             scheduleRefresh({
@@ -304,8 +360,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        elements.filterCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', refreshView);
+        elements.triStateCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('click', (event) => {
+                event.preventDefault();
+                advanceTriState(checkbox);
+                refreshView();
+            });
         });
 
         elements.minPriceInput.addEventListener('input', () => {
@@ -427,6 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadRemoteData();
     };
 
+    initializeTriStateCheckboxes();
     registerInputListeners();
     registerScrollListener();
     registerModalListeners();
