@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "common.ps1")
 
 $repoRoot = Get-RepoRoot
-$uvExe = Get-UvExe
+$uvExe = Install-UvIfMissing
 
 Assert-EnvFile -RepoRoot $repoRoot
 Set-LocalUvCache -RepoRoot $repoRoot

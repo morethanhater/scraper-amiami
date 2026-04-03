@@ -39,20 +39,19 @@ uv python install 3.10
 
 These scripts keep the project on a local Python `3.10` environment in `.venv` and do not run the app on your system Python `3.14`. They also keep `uv` cache and managed Python files inside the repo.
 
-1. Install `uv` once if you do not already have it.
-2. Run the setup script:
+1. Run the setup script:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 ```
-3. Start the scraper:
+2. Start the scraper:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-scraper.ps1
 ```
-4. Start the web UI in another terminal:
+3. Start the web UI in another terminal:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-web.ps1
 ```
-5. Open [http://127.0.0.1:8000/web/index.html](http://127.0.0.1:8000/web/index.html)
+4. Open [http://127.0.0.1:8000/web/index.html](http://127.0.0.1:8000/web/index.html)
 
 To remap only the latest raw file from `output` without rerunning scraping:
 ```powershell
@@ -64,7 +63,7 @@ To build one self-contained HTML file from the latest mapped dataset:
 powershell -ExecutionPolicy Bypass -File .\scripts\export-standalone-latest.ps1
 ```
 
-The setup script will create `.env` from `.env.default` automatically if needed.
+The setup script will install `uv` automatically if it is missing, then create `.env` from `.env.default` and build the local Python `3.10` environment.
 The scraper now defaults to a browser-backed flow using your locally installed Chrome so it can attempt to pass AmiAmi's Cloudflare checks.
 If you want the old direct HTTP mode, set `AMIAMI_TRANSPORT = "direct"` in `.env`.
 

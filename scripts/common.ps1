@@ -35,6 +35,23 @@ function Get-UvExe {
     throw "uv.exe was not found. Install uv first, then rerun this script."
 }
 
+function Install-UvIfMissing {
+    $command = Get-Command uv -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    Write-Host "uv.exe was not found. Installing uv..."
+    Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+
+    $command = Get-Command uv -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    return Get-UvExe
+}
+
 function Assert-EnvFile {
     param(
         [string]$RepoRoot
