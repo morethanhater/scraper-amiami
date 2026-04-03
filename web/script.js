@@ -17,6 +17,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const minPriceInput = document.getElementById('minPrice');
     const maxPriceInput = document.getElementById('maxPrice');
+    const imageModal = document.getElementById('imageModal');
+    const imageModalBackdrop = document.getElementById('imageModalBackdrop');
+    const imageModalClose = document.getElementById('imageModalClose');
+    const imageModalPreview = document.getElementById('imageModalPreview');
 
     // Load JSON data
     const loadData = async () => {
@@ -125,6 +129,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return createCell(wrapper);
     };
 
+    const openImageModal = (src, alt) => {
+        imageModalPreview.src = src;
+        imageModalPreview.alt = alt || 'Full-size preview';
+        imageModal.classList.remove('hidden');
+        imageModal.setAttribute('aria-hidden', 'false');
+    };
+
+    const closeImageModal = () => {
+        imageModal.classList.add('hidden');
+        imageModal.setAttribute('aria-hidden', 'true');
+        imageModalPreview.src = '';
+    };
+
 
     // Display progressively the data
     const displayData = () => {
@@ -145,6 +162,9 @@ document.addEventListener('DOMContentLoaded', () => {
             image.src = item.image_url;
             image.alt = item.name;
             image.loading = 'lazy';
+            image.addEventListener('click', () => {
+                openImageModal(item.image_url, item.name);
+            });
 
             const jancodeCell = item.jancode
                 ? createCell(createLink(`https://myfigurecollection.net/?keywords=${item.jancode}&_tb=item`, item.jancode))
@@ -340,6 +360,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Scroll manager
     window.addEventListener('scroll', handleScroll);
+
+    imageModalClose.addEventListener('click', closeImageModal);
+    imageModalBackdrop.addEventListener('click', (event) => {
+        if (event.target === imageModalBackdrop) {
+            closeImageModal();
+        }
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !imageModal.classList.contains('hidden')) {
+            closeImageModal();
+        }
+    });
 
     // Initialize sorting
     document.querySelectorAll('.sortable').forEach(header => {

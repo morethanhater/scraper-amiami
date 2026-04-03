@@ -110,6 +110,66 @@ img {
     margin-right: 10px;
 }
 
+#itemsTableBody img {
+    cursor: pointer;
+}
+
+.image-modal.hidden {
+    display: none;
+}
+
+.image-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+}
+
+.image-modal-backdrop {
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.image-modal-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-modal-preview {
+    width: auto;
+    height: auto;
+    max-width: 90vw;
+    max-height: 90vh;
+    margin: 0;
+    object-fit: contain;
+    background: #fff;
+}
+
+.image-modal-close {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    color: #000;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
 /* Split cells */
 
 .split-cell {
