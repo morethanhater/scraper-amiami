@@ -63,6 +63,13 @@ To build one self-contained HTML file from the latest mapped dataset:
 powershell -ExecutionPolicy Bypass -File .\scripts\export-standalone-latest.ps1
 ```
 
+For users who prefer double-click launchers, the same actions are available as `.bat` files in [user_scripts](C:\Users\penky\Documents\GitHub\scraper-amiami\user_scripts):
+- `setup.bat`
+- `run-scraper.bat`
+- `run-web.bat`
+- `run-enrich-latest.bat`
+- `export-standalone-latest.bat`
+
 The setup script will install `uv` automatically if it is missing, then create `.env` from `.env.default` and build the local Python `3.10` environment.
 The scraper now defaults to a browser-backed flow using your locally installed Chrome so it can attempt to pass AmiAmi's Cloudflare checks.
 If you want the old direct HTTP mode, set `AMIAMI_TRANSPORT = "direct"` in `.env`.
