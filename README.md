@@ -1,5 +1,6 @@
 # AmiAmi scraper
 Original forked from https://github.com/relhamdi/scraper-amiami
+
 Used AI to implement changes afterwards.
 
 Scraping process for the website AmiAmi.
