@@ -35,21 +35,37 @@ function Get-UvExe {
     throw "uv.exe was not found. Install uv first, then rerun this script."
 }
 
+function Add-UvLocationToPath {
+    param(
+        [string]$UvExePath
+    )
+
+    $uvDirectory = Split-Path -Parent $UvExePath
+    if (-not $uvDirectory) {
+        return
+    }
+
+    $pathEntries = $env:PATH -split ';' | Where-Object { $_ -ne "" }
+    if ($pathEntries -notcontains $uvDirectory) {
+        $env:PATH = "$uvDirectory;$env:PATH"
+    }
+}
+
 function Install-UvIfMissing {
-    $command = Get-Command uv -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
+    try {
+        $uvExe = Get-UvExe
+        Add-UvLocationToPath -UvExePath $uvExe
+        return $uvExe
+    }
+    catch {
     }
 
     Write-Host "uv.exe was not found. Installing uv..."
     Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
 
-    $command = Get-Command uv -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
-    }
-
-    return Get-UvExe
+    $uvExe = Get-UvExe
+    Add-UvLocationToPath -UvExePath $uvExe
+    return $uvExe
 }
 
 function Assert-EnvFile {

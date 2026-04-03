@@ -38,11 +38,30 @@ class BrowserJsonClient:
 
     def __exit__(self, exc_type, exc, tb):
         if self._context is not None:
-            self._context.close()
+            try:
+                self._context.close()
+            except Exception:
+                pass
+            finally:
+                self._context = None
+
         if self._browser is not None:
-            self._browser.close()
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+            finally:
+                self._browser = None
+
         if self._playwright is not None:
-            self._playwright.stop()
+            try:
+                self._playwright.stop()
+            except Exception:
+                pass
+            finally:
+                self._playwright = None
+
+        self._page = None
 
     @property
     def page(self) -> Page:

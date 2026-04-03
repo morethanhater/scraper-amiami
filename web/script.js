@@ -1,98 +1,56 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const yenToEuroMultiplier = 0.006106;   // As of 2025-05-09
-    const defaultValue = 'N/A';
-
-    const folderPath = 'data/';
-    const dataFilesPath = '_data_files.txt';
-
-    let currentIndex = 0;
-    const batchSize = 50;
-    const timeoutValue = 500;
-    const itemConditionOrder = ['J', 'C', 'B', 'B+', 'A-', 'A', ''];
-
-    let jsonData = [];
-    let filteredData = [];
-
-    let currentSort = { column: 'name', direction: 'asc' };
-
-    const minPriceInput = document.getElementById('minPrice');
-    const maxPriceInput = document.getElementById('maxPrice');
-    const imageModal = document.getElementById('imageModal');
-    const imageModalBackdrop = document.getElementById('imageModalBackdrop');
-    const imageModalClose = document.getElementById('imageModalClose');
-    const imageModalPreview = document.getElementById('imageModalPreview');
-
-    // Load JSON data
-    const loadData = async () => {
-        if (Array.isArray(window.__AMIAMI_EMBEDDED_DATA__)) {
-            console.log(`Using embedded dataset, ${window.__AMIAMI_EMBEDDED_DATA__.length} items found.`);
-            jsonData = window.__AMIAMI_EMBEDDED_DATA__;
-            filteredData = jsonData;
-            refreshView();
-            return;
-        }
-
-        // Read file listing JSON files to load
-        const dataResponse = await fetch(folderPath + dataFilesPath);
-        if (!dataResponse.ok) throw new Error('Error while loading the data file.');
-
-        // Retrieve file names
-        const dataText = await dataResponse.text();
-        const filenames = dataText
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 0 && !line.startsWith('#'));
-        console.log(`Found ${filenames.length} JSON files.`);
-
-        try {
-            // Load JSON files
-            for (const filename of filenames) {
-                console.log(`> Loading '${filename}'`);
-                const response = await fetch(folderPath + filename);
-                if (!response.ok) {
-                    throw new Error('Error while loading JSON file.');
-                }
-                const data = await response.json();
-                jsonData = jsonData.concat(data.items);
-            }
-        } catch (error) {
-            console.error('Error while loading JSON files:', error);
-        }
-
-        console.log(`All files loaded, ${jsonData.length} items found.`);
-        filteredData = jsonData;
-        refreshView();
-    }
-
-    const getDiscountPercent = (item) => {
-        if (!item.full_price || !item.price || item.full_price <= 0 || item.price >= item.full_price) {
-            return 0;
-        }
-        return ((item.full_price - item.price) / item.full_price) * 100;
-    };
-
-    const newItemFlags = [
+    const DEFAULT_VALUE = 'N/A';
+    const YEN_TO_EURO_MULTIPLIER = 0.006106; // As of 2025-05-09
+    const FOLDER_PATH = 'data/';
+    const DATA_FILES_PATH = '_data_files.txt';
+    const BATCH_SIZE = 50;
+    const INPUT_DEBOUNCE_MS = 500;
+    const ITEM_CONDITION_ORDER = ['J', 'C', 'B', 'B+', 'A-', 'A', ''];
+    const NEW_ITEM_FLAGS = [
         'is_preowned',
-        'is_preorder',
+    //   'is_preorder',
         'is_backorder',
-        'has_store_bonus',
-        'is_amiami_limited',
+    //    'has_store_bonus',
+    //    'is_amiami_limited',
         'is_age_limited',
-        'has_preorder_bonus',
+    //    'has_preorder_bonus',
         'is_preowned_sale',
     ];
 
-    const isStrictlyNewItem = (item) => {
-        return newItemFlags.every(flag => item[flag] !== true);
+    const elements = {
+        searchInput: document.getElementById('searchInput'),
+        minPriceInput: document.getElementById('minPrice'),
+        maxPriceInput: document.getElementById('maxPrice'),
+        minDiscountInput: document.getElementById('minDiscount'),
+        maxDiscountInput: document.getElementById('maxDiscount'),
+        itemsCount: document.getElementById('itemsCount'),
+        itemsTableBody: document.getElementById('itemsTableBody'),
+        sortableHeaders: Array.from(document.querySelectorAll('.sortable')),
+        filterCheckboxes: Array.from(document.querySelectorAll('input[type="checkbox"]')),
+        imageModal: document.getElementById('imageModal'),
+        imageModalBackdrop: document.getElementById('imageModalBackdrop'),
+        imageModalClose: document.getElementById('imageModalClose'),
+        imageModalPreview: document.getElementById('imageModalPreview'),
     };
+
+    const state = {
+        currentIndex: 0,
+        jsonData: [],
+        filteredData: [],
+        currentSort: { column: 'name', direction: 'asc' },
+    };
+
+    let searchInputTimeoutId;
+    let minPriceTimeoutId;
+    let maxPriceTimeoutId;
+    let minDiscountTimeoutId;
+    let maxDiscountTimeoutId;
+
+    const renderText = (content) => (content instanceof Node ? content : document.createTextNode(content));
 
     const createCell = (content) => {
         const cell = document.createElement('td');
-        if (content instanceof Node) {
-            cell.appendChild(content);
-        } else {
-            cell.textContent = content;
-        }
+        cell.appendChild(renderText(content));
         return cell;
     };
 
@@ -100,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const link = document.createElement('a');
         link.href = href;
         link.target = '_blank';
-        link.textContent = text || defaultValue;
+        link.textContent = text || DEFAULT_VALUE;
         return link;
     };
 
@@ -110,274 +68,368 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const top = document.createElement('span');
         top.className = 'top';
-        if (topContent instanceof Node) {
-            top.appendChild(topContent);
-        } else {
-            top.textContent = topContent;
-        }
+        top.appendChild(renderText(topContent));
 
         const bottom = document.createElement('span');
         bottom.className = 'bottom';
-        if (bottomContent instanceof Node) {
-            bottom.appendChild(bottomContent);
-        } else {
-            bottom.textContent = bottomContent;
-        }
+        bottom.appendChild(renderText(bottomContent));
 
         wrapper.appendChild(top);
         wrapper.appendChild(bottom);
         return createCell(wrapper);
     };
 
+    const formatEuroPrice = (yenPrice) => `${(yenPrice * YEN_TO_EURO_MULTIPLIER).toFixed(2)} €`;
+
+    const formatReleaseDate = (releaseDate) => (
+        releaseDate
+            ? new Date(releaseDate).toLocaleDateString('en-GB', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+            })
+            : DEFAULT_VALUE
+    );
+
+    const getDiscountPercent = (item) => {
+        if (!item.full_price || !item.price || item.full_price <= 0 || item.price >= item.full_price) {
+            return 0;
+        }
+        return ((item.full_price - item.price) / item.full_price) * 100;
+    };
+
+    const isStrictlyNewItem = (item) => NEW_ITEM_FLAGS.every(flag => item[flag] !== true);
+
     const openImageModal = (src, alt) => {
-        imageModalPreview.src = src;
-        imageModalPreview.alt = alt || 'Full-size preview';
-        imageModal.classList.remove('hidden');
-        imageModal.setAttribute('aria-hidden', 'false');
+        elements.imageModalPreview.src = src;
+        elements.imageModalPreview.alt = alt || 'Full-size preview';
+        elements.imageModal.classList.remove('hidden');
+        elements.imageModal.setAttribute('aria-hidden', 'false');
     };
 
     const closeImageModal = () => {
-        imageModal.classList.add('hidden');
-        imageModal.setAttribute('aria-hidden', 'true');
-        imageModalPreview.src = '';
+        elements.imageModal.classList.add('hidden');
+        elements.imageModal.setAttribute('aria-hidden', 'true');
+        elements.imageModalPreview.src = '';
     };
 
+    const getSelectedFilterValues = (name) => (
+        Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map((element) => element.value)
+    );
 
-    // Display progressively the data
+    const parsePriceInput = (value, fallback) => parseFloat(value.replace(',', '.')) || fallback;
+
+    const matchesSearchQuery = (item, query) => (
+        item.name.toLowerCase().includes(query)
+        || item.gcode.toLowerCase().includes(query)
+        || item.scode.toLowerCase().includes(query)
+        || item.jancode?.toLowerCase().includes(query)
+        || item.tags.some(tag => tag.toLowerCase().includes(query))
+        || item.maker_name.toLowerCase().includes(query)
+        || item.modeler_name.toLowerCase().includes(query)
+        || item.description.toLowerCase().includes(query)
+    );
+
+    const matchesConditionFilters = (item, itemConditions, boxConditions) => {
+        const matchesItemCondition = itemConditions.length === 0 || itemConditions.includes(item.item_condition);
+        const matchesBoxCondition = boxConditions.length === 0 || boxConditions.includes(item.box_condition);
+        return matchesItemCondition && matchesBoxCondition;
+    };
+
+    const matchesDetailFilters = (item, itemBoolDetails) => {
+        const requireStrictlyNew = itemBoolDetails.includes('is_new');
+        const positiveItemBoolDetails = itemBoolDetails.filter(filter => filter !== 'is_new');
+        const matchesNew = !requireStrictlyNew || isStrictlyNewItem(item);
+        const matchesBool = positiveItemBoolDetails.length === 0
+            || positiveItemBoolDetails.every(filter => item[filter] === true);
+
+        return matchesNew && matchesBool;
+    };
+
+    const matchesPriceFilter = (item, minPrice, maxPrice) => {
+        const euroPrice = Number((item.price * YEN_TO_EURO_MULTIPLIER).toFixed(2));
+        return euroPrice >= minPrice && euroPrice <= maxPrice;
+    };
+
+    const matchesDiscountFilter = (item, minDiscount, maxDiscount) => {
+        const discountPercent = getDiscountPercent(item);
+        return discountPercent >= minDiscount && discountPercent <= maxDiscount;
+    };
+
+    const buildImageCell = (item) => {
+        const image = document.createElement('img');
+        image.src = item.image_url;
+        image.alt = item.name;
+        image.loading = 'lazy';
+        image.addEventListener('click', () => {
+            openImageModal(item.image_url, item.name);
+        });
+        return createCell(image);
+    };
+
+    const buildJanCodeCell = (item) => (
+        item.jancode
+            ? createCell(createLink(`https://myfigurecollection.net/?keywords=${item.jancode}&_tb=item`, item.jancode))
+            : createCell(DEFAULT_VALUE)
+    );
+
+    const buildConditionCell = (item) => createSplitCell(
+        item.item_condition ? `ITEM: ${item.item_condition}` : 'New',
+        item.box_condition ? `BOX: ${item.box_condition}` : 'New',
+    );
+
+    const buildRow = (item, rowIndex, totalItems) => {
+        const row = document.createElement('tr');
+        const originalPrice = item.full_price || item.price;
+
+        row.appendChild(createCell(`${rowIndex + 1} / ${totalItems}`));
+        row.appendChild(buildImageCell(item));
+        row.appendChild(createCell(item.name));
+        row.appendChild(createSplitCell(
+            createLink(item.gcode_url, item.gcode),
+            createLink(item.scode_url, item.scode || DEFAULT_VALUE),
+        ));
+        row.appendChild(createSplitCell(`¥${item.price}`, formatEuroPrice(item.price)));
+        row.appendChild(createSplitCell(`¥${originalPrice}`, formatEuroPrice(originalPrice)));
+        row.appendChild(createCell(`${getDiscountPercent(item).toFixed(1)}%`));
+        row.appendChild(createCell(item.sale_status || DEFAULT_VALUE));
+        row.appendChild(createCell(formatReleaseDate(item.release_date)));
+        row.appendChild(buildJanCodeCell(item));
+        row.appendChild(buildConditionCell(item));
+
+        return row;
+    };
+
+    const updateDisplayedCount = () => {
+        elements.itemsCount.textContent = state.filteredData.length;
+    };
+
+    const clearTable = () => {
+        elements.itemsTableBody.innerHTML = '';
+    };
+
     const displayData = () => {
-        const tableBody = document.getElementById('itemsTableBody');
-        const endIndex = currentIndex + batchSize;
-        const currentBatch = filteredData.slice(currentIndex, endIndex);
+        const endIndex = state.currentIndex + BATCH_SIZE;
+        const currentBatch = state.filteredData.slice(state.currentIndex, endIndex);
 
         currentBatch.forEach((item, index) => {
-            const euroPrice = (item.price * yenToEuroMultiplier).toFixed(2);
-            const originalPrice = item.full_price || item.price;
-            const originalEuroPrice = (originalPrice * yenToEuroMultiplier).toFixed(2);
-            const discountPercent = getDiscountPercent(item).toFixed(1);
-            const releaseDate = item.release_date ? new Date(item.release_date).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' }) : defaultValue;
-
-            const row = document.createElement('tr');
-
-            const image = document.createElement('img');
-            image.src = item.image_url;
-            image.alt = item.name;
-            image.loading = 'lazy';
-            image.addEventListener('click', () => {
-                openImageModal(item.image_url, item.name);
-            });
-
-            const jancodeCell = item.jancode
-                ? createCell(createLink(`https://myfigurecollection.net/?keywords=${item.jancode}&_tb=item`, item.jancode))
-                : createCell(defaultValue);
-
-            row.appendChild(createCell(`${index + currentIndex + 1} / ${filteredData.length}`));
-            row.appendChild(createCell(image));
-            row.appendChild(createCell(item.name));
-            row.appendChild(createSplitCell(
-                createLink(item.gcode_url, item.gcode),
-                createLink(item.scode_url, item.scode || defaultValue),
-            ));
-            row.appendChild(createSplitCell(`¥${item.price}`, `${euroPrice} €`));
-            row.appendChild(createSplitCell(`¥${originalPrice}`, `${originalEuroPrice} €`));
-            row.appendChild(createCell(`${discountPercent}%`));
-            row.appendChild(createCell(item.sale_status || defaultValue));
-            row.appendChild(createCell(releaseDate));
-            row.appendChild(jancodeCell);
-            row.appendChild(createSplitCell(
-                item.item_condition ? `ITEM: ${item.item_condition}` : 'New',
-                item.box_condition ? `BOX: ${item.box_condition}` : 'New',
-            ));
-
-            tableBody.appendChild(row);
+            const rowIndex = state.currentIndex + index;
+            elements.itemsTableBody.appendChild(buildRow(item, rowIndex, state.filteredData.length));
         });
 
-        currentIndex = endIndex;
-
-        // Update item count
+        state.currentIndex = endIndex;
         updateDisplayedCount();
     };
 
-
-    // Update count of currently displayed items
-    const updateDisplayedCount = () => {
-        const countDisplay = document.getElementById('itemsCount');
-        countDisplay.textContent = filteredData.length;
-    };
-
-
-    // Scroll handling to paginate items
-    const handleScroll = () => {
-        // Triggered before end of page
-        const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200;
-        if (nearBottom && currentIndex < filteredData.length) {
-            displayData();
-        }
-    };
-
-
-    // Data filtering
     const filterData = () => {
-        return jsonData.filter(item => {
-            const query = document.getElementById('searchInput').value.toLowerCase();
+        const query = elements.searchInput.value.toLowerCase();
+        const itemConditions = getSelectedFilterValues('item_condition');
+        const boxConditions = getSelectedFilterValues('box_condition');
+        const itemBoolDetails = getSelectedFilterValues('item_bool_details');
+        const minPrice = parsePriceInput(elements.minPriceInput.value, 0.0);
+        const maxPrice = parsePriceInput(elements.maxPriceInput.value, Infinity);
+        const minDiscount = parsePriceInput(elements.minDiscountInput.value, 0.0);
+        const maxDiscount = parsePriceInput(elements.maxDiscountInput.value, 100.0);
 
-            // Checkbox filters
-            const itemConditions = Array.from(document.querySelectorAll('input[name="item_condition"]:checked')).map(el => el.value);
-            const boxConditions = Array.from(document.querySelectorAll('input[name="box_condition"]:checked')).map(el => el.value);
-            const itemBoolDetails = Array.from(document.querySelectorAll('input[name="item_bool_details"]:checked')).map(el => el.value);
-            const requireStrictlyNew = itemBoolDetails.includes('is_new');
-            const positiveItemBoolDetails = itemBoolDetails.filter(filter => filter !== 'is_new');
-
-            // Number filters
-            const minPrice = parseFloat(minPriceInput.value.replace(',', '.')) || 0.0;
-            const maxPrice = parseFloat(maxPriceInput.value.replace(',', '.')) || Infinity;
-            const euroPrice = (item.price * yenToEuroMultiplier).toFixed(2);
-
-            // Query filter
-            const matchesText = item.name.toLowerCase().includes(query)
-                || item.gcode.toLowerCase().includes(query)
-                || item.scode.toLowerCase().includes(query)
-                || item.jancode?.toLowerCase().includes(query)
-                || item.tags.some(tag => tag.toLowerCase().includes(query))
-                || item.maker_name.toLowerCase().includes(query)
-                || item.modeler_name.toLowerCase().includes(query)
-                || item.description.toLowerCase().includes(query);
-
-            // Check conditions
-
-            const matchesItemCondition = itemConditions.length === 0 || itemConditions.includes(item.item_condition);
-            const matchesBoxCondition = boxConditions.length === 0 || boxConditions.includes(item.box_condition);
-            const matchesNew = !requireStrictlyNew || isStrictlyNewItem(item);
-            const matchesBool = positiveItemBoolDetails.length === 0 || positiveItemBoolDetails.every(filter => item[filter] === true);
-
-            const matchesPrice = euroPrice >= minPrice && euroPrice <= maxPrice;
-
-            return matchesText && matchesItemCondition && matchesBoxCondition && matchesNew && matchesBool && matchesPrice;
-        });
+        return state.jsonData.filter(item => (
+            matchesSearchQuery(item, query)
+            && matchesConditionFilters(item, itemConditions, boxConditions)
+            && matchesDetailFilters(item, itemBoolDetails)
+            && matchesPriceFilter(item, minPrice, maxPrice)
+            && matchesDiscountFilter(item, minDiscount, maxDiscount)
+        ));
     };
 
+    const getComparableValue = (item, column) => {
+        if (column === 'release_date') {
+            return new Date(item.release_date);
+        }
+        if (column === 'discount_percent') {
+            return getDiscountPercent(item);
+        }
+        if (column === 'item_condition') {
+            const index = ITEM_CONDITION_ORDER.indexOf(item.item_condition);
+            return index === -1 ? ITEM_CONDITION_ORDER.length : index;
+        }
+        return item[column];
+    };
 
-    // Sorting application
     const sortData = (column, direction) => {
-        filteredData.sort((a, b) => {
-            let valueA = a[column];
-            let valueB = b[column];
-
-            if (column === 'release_date') {
-                valueA = new Date(a.release_date);
-                valueB = new Date(b.release_date);
-            } else if (column === 'discount_percent') {
-                valueA = getDiscountPercent(a);
-                valueB = getDiscountPercent(b);
-            } else if (column === 'item_condition') {
-                valueA = itemConditionOrder.indexOf(a.item_condition);
-                valueB = itemConditionOrder.indexOf(b.item_condition);
-
-                // Case when item condition is unknown
-                if (valueA === -1) valueA = itemConditionOrder.length;
-                if (valueB === -1) valueB = itemConditionOrder.length;
-            }
+        state.filteredData.sort((a, b) => {
+            const valueA = getComparableValue(a, column);
+            const valueB = getComparableValue(b, column);
 
             if (direction === 'asc') {
                 return valueA > valueB ? 1 : valueA < valueB ? -1 : 0;
-            } else {
-                return valueA < valueB ? 1 : valueA > valueB ? -1 : 0;
+            }
+            return valueA < valueB ? 1 : valueA > valueB ? -1 : 0;
+        });
+
+        clearTable();
+        state.currentIndex = 0;
+        displayData();
+    };
+
+    const updateSortHeaders = (direction, activeHeader) => {
+        elements.sortableHeaders.forEach(header => header.classList.remove('sorted-asc', 'sorted-desc'));
+        activeHeader.classList.add(direction === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    };
+
+    const setupSort = (column, headerElement) => {
+        const direction = state.currentSort.column === column && state.currentSort.direction === 'asc' ? 'desc' : 'asc';
+        state.currentSort = { column, direction };
+        sortData(column, direction);
+        updateSortHeaders(direction, headerElement);
+    };
+
+    const refreshView = () => {
+        state.filteredData = filterData();
+        state.currentIndex = 0;
+        clearTable();
+        displayData();
+    };
+
+    const scheduleRefresh = (timeoutRefSetter) => {
+        clearTimeout(timeoutRefSetter.current);
+        timeoutRefSetter.current = setTimeout(() => {
+            refreshView();
+        }, INPUT_DEBOUNCE_MS);
+    };
+
+    const registerInputListeners = () => {
+        elements.searchInput.addEventListener('input', () => {
+            scheduleRefresh({
+                get current() { return searchInputTimeoutId; },
+                set current(value) { searchInputTimeoutId = value; },
+            });
+        });
+
+        elements.filterCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', refreshView);
+        });
+
+        elements.minPriceInput.addEventListener('input', () => {
+            scheduleRefresh({
+                get current() { return minPriceTimeoutId; },
+                set current(value) { minPriceTimeoutId = value; },
+            });
+        });
+
+        elements.maxPriceInput.addEventListener('input', () => {
+            scheduleRefresh({
+                get current() { return maxPriceTimeoutId; },
+                set current(value) { maxPriceTimeoutId = value; },
+            });
+        });
+
+        elements.minDiscountInput.addEventListener('input', () => {
+            scheduleRefresh({
+                get current() { return minDiscountTimeoutId; },
+                set current(value) { minDiscountTimeoutId = value; },
+            });
+        });
+
+        elements.maxDiscountInput.addEventListener('input', () => {
+            scheduleRefresh({
+                get current() { return maxDiscountTimeoutId; },
+                set current(value) { maxDiscountTimeoutId = value; },
+            });
+        });
+    };
+
+    const registerScrollListener = () => {
+        window.addEventListener('scroll', () => {
+            const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 200;
+            if (nearBottom && state.currentIndex < state.filteredData.length) {
+                displayData();
             }
         });
-
-        // Reload data after sorting
-        document.getElementById('itemsTableBody').innerHTML = '';
-        currentIndex = 0;
-        displayData();
     };
 
-
-    // Setup sorting on given column
-    const setupSort = (column, element) => {
-        const sortDirection = currentSort.column === column && currentSort.direction === 'asc' ? 'desc' : 'asc';
-        currentSort = { column, direction: sortDirection };
-
-        // Apply sorting options
-        sortData(column, sortDirection);
-
-        // Update visual elements
-        document.querySelectorAll('.sortable').forEach(header => header.classList.remove('sorted-asc', 'sorted-desc'));
-        element.classList.add(sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
-    };
-
-
-    // Refresh view
-    const refreshView = () => {
-        filteredData = filterData();
-        currentIndex = 0;
-        document.getElementById('itemsTableBody').innerHTML = '';
-        displayData();
-    };
-
-
-    // Search input management
-    let searchInputTimeoutId;
-    const searchInput = document.getElementById('searchInput');
-    searchInput.addEventListener('input', () => {
-        clearTimeout(searchInputTimeoutId);
-
-        searchInputTimeoutId = setTimeout(() => {
-            refreshView();
-        }, timeoutValue);
-    });
-
-
-    // Checkbox filters management
-    const filterCheckboxes = document.querySelectorAll('input[type="checkbox"]');
-    filterCheckboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', () => {
-            refreshView();
+    const registerModalListeners = () => {
+        elements.imageModalClose.addEventListener('click', closeImageModal);
+        elements.imageModalBackdrop.addEventListener('click', (event) => {
+            if (event.target === elements.imageModalBackdrop) {
+                closeImageModal();
+            }
         });
-    });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !elements.imageModal.classList.contains('hidden')) {
+                closeImageModal();
+            }
+        });
+    };
 
+    const registerSortListeners = () => {
+        elements.sortableHeaders.forEach(header => {
+            header.addEventListener('click', () => {
+                setupSort(header.dataset.column, header);
+            });
+        });
+    };
 
-    // Price management
-    let minPriceTimeoutId;
-    minPriceInput.addEventListener('input', () => {
-        clearTimeout(minPriceTimeoutId);
+    const loadEmbeddedData = () => {
+        if (!Array.isArray(window.__AMIAMI_EMBEDDED_DATA__)) {
+            return false;
+        }
 
-        minPriceTimeoutId = setTimeout(() => {
-            refreshView();
-        }, timeoutValue);
-    });
+        console.log(`Using embedded dataset, ${window.__AMIAMI_EMBEDDED_DATA__.length} items found.`);
+        state.jsonData = window.__AMIAMI_EMBEDDED_DATA__;
+        state.filteredData = state.jsonData;
+        refreshView();
+        return true;
+    };
 
-    let maxPriceTimeoutId;
-    maxPriceInput.addEventListener('input', () => {
-        clearTimeout(maxPriceTimeoutId);
+    const loadDataFilesList = async () => {
+        const response = await fetch(FOLDER_PATH + DATA_FILES_PATH);
+        if (!response.ok) {
+            throw new Error('Error while loading the data file.');
+        }
 
-        maxPriceTimeoutId = setTimeout(() => {
-            refreshView();
-        }, timeoutValue);
-    });
+        const dataText = await response.text();
+        return dataText
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0 && !line.startsWith('#'));
+    };
 
+    const loadJsonFile = async (filename) => {
+        console.log(`> Loading '${filename}'`);
+        const response = await fetch(FOLDER_PATH + filename);
+        if (!response.ok) {
+            throw new Error('Error while loading JSON file.');
+        }
+        return response.json();
+    };
 
-    // Initial loading
+    const loadRemoteData = async () => {
+        const filenames = await loadDataFilesList();
+        console.log(`Found ${filenames.length} JSON files.`);
+
+        try {
+            for (const filename of filenames) {
+                const data = await loadJsonFile(filename);
+                state.jsonData = state.jsonData.concat(data.items);
+            }
+        } catch (error) {
+            console.error('Error while loading JSON files:', error);
+        }
+
+        console.log(`All files loaded, ${state.jsonData.length} items found.`);
+        state.filteredData = state.jsonData;
+        refreshView();
+    };
+
+    const loadData = async () => {
+        if (loadEmbeddedData()) {
+            return;
+        }
+        await loadRemoteData();
+    };
+
+    registerInputListeners();
+    registerScrollListener();
+    registerModalListeners();
+    registerSortListeners();
     loadData();
-
-    // Scroll manager
-    window.addEventListener('scroll', handleScroll);
-
-    imageModalClose.addEventListener('click', closeImageModal);
-    imageModalBackdrop.addEventListener('click', (event) => {
-        if (event.target === imageModalBackdrop) {
-            closeImageModal();
-        }
-    });
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !imageModal.classList.contains('hidden')) {
-            closeImageModal();
-        }
-    });
-
-    // Initialize sorting
-    document.querySelectorAll('.sortable').forEach(header => {
-        header.addEventListener('click', () => {
-            const column = header.dataset.column;
-            setupSort(column, header);
-        });
-    });
 });

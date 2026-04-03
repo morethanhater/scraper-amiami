@@ -9,16 +9,20 @@
 </head>
 
 <body>
-    <div class="container">
-        <h1>AmiAmi advanced search</h1>
+    <main class="container">
+        <header class="page-header">
+            <h1>AmiAmi advanced search</h1>
+            <label for="searchInput" class="visually-hidden">Search items</label>
+            <input
+                type="text"
+                id="searchInput"
+                class="search-bar"
+                placeholder="Search for a name, gcode, scode, JAN code, tag, maker, modeler or description"
+            >
+            <p>Total items: <span id="itemsCount">0</span></p>
+        </header>
 
-        <input type="text" id="searchInput"
-            placeholder="Search for a name, gcode, scode, JAN code, tag, maker, modeler or description"
-            class="search-bar">
-        <p>Total items: <span id="itemsCount">0</span></p>
-
-        <!-- Filters -->
-        <div id="filters">
+        <section id="filters" aria-label="Search filters">
             <div class="filter-group">
                 <h3>Item details filters</h3>
                 <label><input type="checkbox" name="item_bool_details" value="is_new"> New</label>
@@ -28,8 +32,7 @@
                 <label><input type="checkbox" name="item_bool_details" value="has_store_bonus"> w/ Store Bonus</label>
                 <label><input type="checkbox" name="item_bool_details" value="is_amiami_limited"> Amiami Limited</label>
                 <label><input type="checkbox" name="item_bool_details" value="is_age_limited"> Age Limited</label>
-                <label><input type="checkbox" name="item_bool_details" value="has_preorder_bonus"> w/ Preorder
-                    Bonus</label>
+                <label><input type="checkbox" name="item_bool_details" value="has_preorder_bonus"> w/ Preorder Bonus</label>
                 <label><input type="checkbox" name="item_bool_details" value="is_on_sale"> On Sale</label>
                 <label><input type="checkbox" name="item_bool_details" value="is_preowned_sale"> Preowned Sale</label>
             </div>
@@ -54,7 +57,6 @@
                 <label><input type="checkbox" name="box_condition" value="N"> N</label>
             </div>
 
-
             <div class="filter-group">
                 <h3>Price filters (in €)</h3>
                 <label for="minPrice">Price Min:</label>
@@ -63,34 +65,44 @@
                 <label for="maxPrice">Price Max:</label>
                 <input type="number" id="maxPrice" placeholder="Max" min="0" max="10000" step="any" value="200">
             </div>
-        </div>
 
-        <!-- Data table -->
-        <table id="itemsTable">
-            <thead>
-                <tr>
-                    <th id="indexColumn">Index</th>
-                    <th id="imgColumn">Image</th>
-                    <th id="nameColumn" class="sortable" data-column="name">Name</th>
-                    <th id="codeColumn" class="sortable" data-column="gcode">gcode / scode</th>
-                    <th id="priceColumn" class="sortable" data-column="price">Price</th>
-                    <th id="originalPriceColumn" class="sortable" data-column="full_price">Original price</th>
-                    <th id="discountColumn" class="sortable" data-column="discount_percent">Discount (%)</th>
-                    <th id="statusColumn">Status</th>
-                    <th id="releaseColumn" class="sortable" data-column="release_date">Release date</th>
-                    <th id="jancodeColumn">JAN Code</th>
-                    <th id="conditionColumn" class="sortable" data-column="item_condition">Item condition</th>
-                </tr>
-            </thead>
-            <tbody id="itemsTableBody">
-                <!-- Insert data here -->
-            </tbody>
-        </table>
-    </div>
+            <div class="filter-group">
+                <h3>Discount (%)</h3>
+                <label for="minDiscount">Discount Min:</label>
+                <input type="number" id="minDiscount" placeholder="Min" min="0" max="100" step="any" value="0">
+
+                <label for="maxDiscount">Discount Max:</label>
+                <input type="number" id="maxDiscount" placeholder="Max" min="0" max="100" step="any" value="100">
+            </div>
+        </section>
+
+        <section aria-label="Search results">
+            <table id="itemsTable">
+                <thead>
+                    <tr>
+                        <th id="indexColumn">Index</th>
+                        <th id="imgColumn">Image</th>
+                        <th id="nameColumn" class="sortable" data-column="name">Name</th>
+                        <th id="codeColumn" class="sortable" data-column="gcode">gcode / scode</th>
+                        <th id="priceColumn" class="sortable" data-column="price">Price</th>
+                        <th id="originalPriceColumn" class="sortable" data-column="full_price">Original price</th>
+                        <th id="discountColumn" class="sortable" data-column="discount_percent">Discount (%)</th>
+                        <th id="statusColumn">Status</th>
+                        <th id="releaseColumn" class="sortable" data-column="release_date">Release date</th>
+                        <th id="jancodeColumn">JAN Code</th>
+                        <th id="conditionColumn" class="sortable" data-column="item_condition">Item condition</th>
+                    </tr>
+                </thead>
+                <tbody id="itemsTableBody">
+                    <!-- Insert data here -->
+                </tbody>
+            </table>
+        </section>
+    </main>
 
     <div id="imageModal" class="image-modal hidden" aria-hidden="true">
         <div id="imageModalBackdrop" class="image-modal-backdrop">
-            <div class="image-modal-content">
+            <div class="image-modal-content" role="dialog" aria-modal="true" aria-label="Image preview">
                 <button id="imageModalClose" class="image-modal-close" type="button" aria-label="Close image preview">X</button>
                 <img id="imageModalPreview" class="image-modal-preview" alt="Full-size preview">
             </div>
