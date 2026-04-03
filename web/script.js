@@ -67,6 +67,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return ((item.full_price - item.price) / item.full_price) * 100;
     };
 
+    const newItemFlags = [
+        'is_preowned',
+        'is_preorder',
+        'is_backorder',
+        'has_store_bonus',
+        'is_amiami_limited',
+        'is_age_limited',
+        'has_preorder_bonus',
+        'is_preowned_sale',
+    ];
+
+    const isStrictlyNewItem = (item) => {
+        return newItemFlags.every(flag => item[flag] !== true);
+    };
+
     const createCell = (content) => {
         const cell = document.createElement('td');
         if (content instanceof Node) {
@@ -189,6 +204,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemConditions = Array.from(document.querySelectorAll('input[name="item_condition"]:checked')).map(el => el.value);
             const boxConditions = Array.from(document.querySelectorAll('input[name="box_condition"]:checked')).map(el => el.value);
             const itemBoolDetails = Array.from(document.querySelectorAll('input[name="item_bool_details"]:checked')).map(el => el.value);
+            const requireStrictlyNew = itemBoolDetails.includes('is_new');
+            const positiveItemBoolDetails = itemBoolDetails.filter(filter => filter !== 'is_new');
 
             // Number filters
             const minPrice = parseFloat(minPriceInput.value.replace(',', '.')) || 0.0;
@@ -209,11 +226,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const matchesItemCondition = itemConditions.length === 0 || itemConditions.includes(item.item_condition);
             const matchesBoxCondition = boxConditions.length === 0 || boxConditions.includes(item.box_condition);
-            const matchesBool = itemBoolDetails.length === 0 || itemBoolDetails.every(filter => item[filter] === true);
+            const matchesNew = !requireStrictlyNew || isStrictlyNewItem(item);
+            const matchesBool = positiveItemBoolDetails.length === 0 || positiveItemBoolDetails.every(filter => item[filter] === true);
 
             const matchesPrice = euroPrice >= minPrice && euroPrice <= maxPrice;
 
-            return matchesText && matchesItemCondition && matchesBoxCondition && matchesBool && matchesPrice;
+            return matchesText && matchesItemCondition && matchesBoxCondition && matchesNew && matchesBool && matchesPrice;
         });
     };
 
