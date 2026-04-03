@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from json import load as json_load
+from math import ceil
 from os.path import exists, join
 from re import search as re_search
 from time import sleep
@@ -6,6 +8,18 @@ from typing import Dict, List, Optional, Tuple
 
 from config import (
     AMIAMI_API_ROOT,
+    AMIAMI_BROWSER_CHANNEL,
+    AMIAMI_CRAWL_SLEEP_SECONDS,
+    AMIAMI_DETAIL_SLEEP_SECONDS,
+    AMIAMI_DETAIL_WORKERS,
+    AMIAMI_ENRICH_SAVE_EVERY,
+    AMIAMI_FETCH_PREOWNED_DETAILS,
+    AMIAMI_HEADLESS,
+    AMIAMI_MAX_RETRIES,
+    AMIAMI_PAGE_WORKERS,
+    AMIAMI_RETRY_BASE_SECONDS,
+    AMIAMI_START_URL,
+    AMIAMI_TRANSPORT,
     AMIAMI_USER_AGENT,
     AMIAMI_USER_KEY,
     BROWSER,
@@ -27,6 +41,7 @@ from models.amiami.index import (
     AmiAmiItemsResponse,
 )
 from models.amiami.utils import AmiAmiItemOutputDump, AmiAmiItemsDump, AmiAmiQueryArgs
+from scrapers.browser_client import BrowserJsonClient
 from utils.date_util import get_current_date
 from utils.json_util import save_model_to_json
 
@@ -59,8 +74,117 @@ class AmiAmiScraper:
         }
         if extra_headers is not None:
             self.headers.update(extra_headers)
-        self.crawl_sleep_time = 1
-        self.scrap_sleep_time = 1.5
+        self.crawl_sleep_time = AMIAMI_CRAWL_SLEEP_SECONDS
+        self.scrap_sleep_time = AMIAMI_DETAIL_SLEEP_SECONDS
+        self.fetch_preowned_details = AMIAMI_FETCH_PREOWNED_DETAILS
+        self.page_workers = max(1, AMIAMI_PAGE_WORKERS)
+        self.detail_workers = max(1, AMIAMI_DETAIL_WORKERS)
+        self.max_retries = max(0, AMIAMI_MAX_RETRIES)
+        self.retry_base_seconds = max(0.5, AMIAMI_RETRY_BASE_SECONDS)
+        self.enrich_save_every = max(1, AMIAMI_ENRICH_SAVE_EVERY)
+        self.transport = AMIAMI_TRANSPORT
+        self.browser_client: Optional[BrowserJsonClient] = None
+        self.detail_enrichment_disabled = False
+
+    def __enter__(self):
+        if self.transport == "browser":
+            self.browser_client = BrowserJsonClient(
+                start_url=AMIAMI_START_URL,
+                browser_channel=AMIAMI_BROWSER_CHANNEL,
+                headless=AMIAMI_HEADLESS,
+            )
+            self.browser_client.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.browser_client is not None:
+            self.browser_client.__exit__(exc_type, exc, tb)
+
+    def _request_json(self, url: str, params: Dict[str, str]) -> Dict:
+        normalized_params = {
+            key: str(getattr(value, "value", value)) for key, value in params.items()
+        }
+        if self.transport == "browser":
+            if self.browser_client is None:
+                raise RuntimeError("Browser transport is not initialized")
+            return self._with_retry(
+                lambda: self.browser_client.get_json(url, normalized_params, self.headers),
+                context=f"{url} {normalized_params.get('pagecnt', normalized_params)}",
+            )
+
+        return self._with_retry(
+            lambda: self._request_json_direct(url, normalized_params),
+            context=f"{url} {normalized_params.get('pagecnt', normalized_params)}",
+        )
+
+    def _request_json_direct(self, url: str, normalized_params: Dict[str, str]) -> Dict:
+        response = requests.get(
+            url,
+            params=normalized_params,
+            headers=self.headers,
+            impersonate=BROWSER,
+        )
+        print(f"Request status: {response.status_code}")
+        response.raise_for_status()
+        return response.json()
+
+    def _request_json_http(
+        self,
+        url: str,
+        params: Dict[str, str],
+        extra_headers: Optional[Dict[str, str]] = None,
+        cookies: Optional[List[Dict]] = None,
+    ) -> Dict:
+        normalized_params = {
+            key: str(getattr(value, "value", value)) for key, value in params.items()
+        }
+        headers = dict(self.headers)
+        if extra_headers is not None:
+            headers.update(extra_headers)
+
+        session = requests.Session(headers=headers, impersonate=BROWSER)
+        if cookies:
+            for cookie in cookies:
+                session.cookies.set(
+                    cookie["name"],
+                    cookie["value"],
+                    domain=cookie.get("domain"),
+                    path=cookie.get("path"),
+                )
+
+        return self._with_retry(
+            lambda: self._request_json_http_once(session, url, normalized_params),
+            context=f"{url} {normalized_params.get('pagecnt', normalized_params)}",
+        )
+
+    def _request_json_http_once(
+        self,
+        session: requests.Session,
+        url: str,
+        normalized_params: Dict[str, str],
+    ) -> Dict:
+        response = session.get(url, params=normalized_params)
+        response.raise_for_status()
+        return response.json()
+
+    def _with_retry(self, fn, context: str) -> Dict:
+        last_error = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                return fn()
+            except Exception as exc:
+                last_error = exc
+                error_text = str(exc)
+                if "429" not in error_text or attempt >= self.max_retries:
+                    raise
+
+                delay = self.retry_base_seconds * (2**attempt)
+                print(
+                    f"HTTP 429 on {context}. Retry {attempt + 1}/{self.max_retries} in {delay:.1f}s..."
+                )
+                sleep(delay)
+
+        raise last_error
 
     def _crawl_items_on_page(
         self,
@@ -97,15 +221,7 @@ class AmiAmiScraper:
         # Get items on given page
         url = f"{AMIAMI_API_ROOT}/items"
         print(f"> Crawling '{url}' with params={params}")
-        response = requests.get(
-            url,
-            params=params,
-            headers=self.headers,
-            impersonate=BROWSER,
-        )
-        print(f"Crawl request status: {response.status_code}")
-        response.raise_for_status()
-        data = response.json()
+        data = self._request_json(url, params)
         return AmiAmiItemsResponse(**data)
 
     def _scrap_items(self, args: AmiAmiQueryArgs) -> List[AmiAmiItem]:
@@ -126,28 +242,139 @@ class AmiAmiScraper:
                 args.sort_key = ItemSortingEnum.RECENT_UPDATE
 
         # Crawl items in pages
-        results: List[AmiAmiItem] = []
-        page = 1
-        while True:
-            response = self._crawl_items_on_page(page, args)
-            # If no more pages
-            if not response.api_success or not response.items:
+        first_response = self._crawl_items_on_page(1, args)
+        if not first_response.api_success or not first_response.items:
+            return []
+
+        results: List[AmiAmiItem] = list(first_response.items)
+        total_pages = ceil(first_response.search_result.total_results / ITEMS_PER_PAGE)
+        if args.num_pages is not None:
+            total_pages = min(total_pages, args.num_pages)
+
+        if total_pages <= 1:
+            return results
+
+        if self.page_workers <= 1:
+            for page in range(2, total_pages + 1):
+                response = self._crawl_items_on_page(page, args)
+                if not response.api_success or not response.items:
+                    break
+                results.extend(response.items)
+                sleep(self.crawl_sleep_time)
+            return results
+
+        extra_headers: Dict[str, str] = {}
+        cookies: List[Dict] = []
+        if self.transport == "browser" and self.browser_client is not None:
+            extra_headers["User-Agent"] = self.browser_client.get_user_agent()
+            cookies = self.browser_client.export_cookies()
+
+        print(
+            f"Fetching pages 2-{total_pages} with {self.page_workers} workers..."
+        )
+        responses_by_page: Dict[int, AmiAmiItemsResponse] = {}
+        page_numbers = list(range(2, total_pages + 1))
+        page_batches = [
+            page_numbers[index::self.page_workers] for index in range(self.page_workers)
+        ]
+        page_batches = [batch for batch in page_batches if batch]
+        with ThreadPoolExecutor(max_workers=self.page_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._fetch_items_batch_parallel,
+                    batch,
+                    args,
+                    extra_headers,
+                    cookies,
+                ): batch
+                for batch in page_batches
+            }
+            for future in as_completed(futures):
+                batch_responses = future.result()
+                responses_by_page.update(batch_responses)
+
+        for page in range(2, total_pages + 1):
+            response = responses_by_page.get(page)
+            if response is None or not response.api_success or not response.items:
                 break
             results.extend(response.items)
 
-            # If all wanted pages were scraped
-            if args.num_pages and page >= args.num_pages:
-                break
-
-            page += 1
-            sleep(self.crawl_sleep_time)
-
         return results
+
+    def _fetch_items_batch_parallel(
+        self,
+        pages: List[int],
+        args: AmiAmiQueryArgs,
+        extra_headers: Dict[str, str],
+        cookies: List[Dict],
+    ) -> Dict[int, AmiAmiItemsResponse]:
+        responses: Dict[int, AmiAmiItemsResponse] = {}
+
+        if self.transport == "browser":
+            with BrowserJsonClient(
+                start_url=AMIAMI_START_URL,
+                browser_channel=AMIAMI_BROWSER_CHANNEL,
+                headless=AMIAMI_HEADLESS,
+                initial_cookies=cookies,
+            ) as client:
+                for page in pages:
+                    params = {
+                        "pagecnt": page,
+                        "pagemax": ITEMS_PER_PAGE,
+                        "lang": "eng",
+                        "age_confirm": 1,
+                        "s_keywords": args.keyword or "",
+                        "s_cate1": args.category1 if args.category1 else "",
+                        "s_cate2": args.category2 if args.category2 else "",
+                        "s_cate3": args.category3 if args.category3 else "",
+                        "s_sortkey": args.sort_key if args.sort_key else "",
+                    }
+                    for item_type in args.types:
+                        params[item_type] = "1"
+
+                    data = client.get_json(
+                        f"{AMIAMI_API_ROOT}/items",
+                        {
+                            key: str(getattr(value, "value", value))
+                            for key, value in params.items()
+                        },
+                        self.headers,
+                    )
+                    responses[page] = AmiAmiItemsResponse(**data)
+                    print(f"Fetched page {page}")
+            return responses
+
+        for page in pages:
+            params = {
+                "pagecnt": page,
+                "pagemax": ITEMS_PER_PAGE,
+                "lang": "eng",
+                "age_confirm": 1,
+                "s_keywords": args.keyword or "",
+                "s_cate1": args.category1 if args.category1 else "",
+                "s_cate2": args.category2 if args.category2 else "",
+                "s_cate3": args.category3 if args.category3 else "",
+                "s_sortkey": args.sort_key if args.sort_key else "",
+            }
+            for item_type in args.types:
+                params[item_type] = "1"
+
+            data = self._request_json_http(
+                f"{AMIAMI_API_ROOT}/items",
+                params,
+                extra_headers=extra_headers,
+                cookies=cookies,
+            )
+            responses[page] = AmiAmiItemsResponse(**data)
+            print(f"Fetched page {page}")
+
+        return responses
 
     def _crawl_item_details(
         self,
         code: str,
         code_type: AmiAmiCodeTypeLiteral,
+        browser_client: Optional[BrowserJsonClient] = None,
     ) -> AmiAmiItemResponse:
         """
         Crawl details page for the given item.
@@ -163,15 +390,16 @@ class AmiAmiScraper:
 
         # Crawl details page for given item
         url = f"{AMIAMI_API_ROOT}/item"
-        response = requests.get(
-            url,
-            params=params,
-            headers=self.headers,
-            impersonate=BROWSER,
-        )
-        response.raise_for_status()
-        print(f"Scrap request status: {response.status_code}")
-        data = response.json()
+        if browser_client is not None:
+            normalized_params = {
+                key: str(getattr(value, "value", value)) for key, value in params.items()
+            }
+            data = self._with_retry(
+                lambda: browser_client.get_json(url, normalized_params, self.headers),
+                context=f"{url} {code}",
+            )
+        else:
+            data = self._request_json(url, params)
 
         sleep(self.scrap_sleep_time)
         return AmiAmiItemResponse(**data)
@@ -215,6 +443,7 @@ class AmiAmiScraper:
         code: str,
         code_type: AmiAmiCodeTypeLiteral,
         check_alts: bool = True,
+        browser_client: Optional[BrowserJsonClient] = None,
     ) -> List[AmiAmiItemOutput]:
         """
         Scrap an item's details page and its related items.
@@ -233,7 +462,11 @@ class AmiAmiScraper:
 
         # Crawl details for given item
         try:
-            response = self._crawl_item_details(code, code_type)
+            response = self._crawl_item_details(
+                code,
+                code_type,
+                browser_client=browser_client,
+            )
         except Exception as e:
             if "429" in str(e) and self.stop_on_429:
                 raise Exception("HTTP 429, try again later")
@@ -251,10 +484,56 @@ class AmiAmiScraper:
             for other_item in response.embedded_data.other_items:
                 # Check_alts to false to avoid getting items twice (and entering an infinite loop)
                 results.extend(
-                    self._scrap_item(other_item.scode, "scode", check_alts=False)
+                    self._scrap_item(
+                        other_item.scode,
+                        "scode",
+                        check_alts=False,
+                        browser_client=browser_client,
+                    )
                 )
 
         return results
+
+    def _enrich_item_with_details(
+        self,
+        item: AmiAmiItem,
+        cookies: Optional[List[Dict]] = None,
+    ) -> List[AmiAmiItemOutput]:
+        if self.detail_enrichment_disabled:
+            mapped_items = []
+        else:
+            try:
+                if self.transport == "browser" and cookies is not None:
+                    with BrowserJsonClient(
+                        start_url=AMIAMI_START_URL,
+                        browser_channel=AMIAMI_BROWSER_CHANNEL,
+                        headless=AMIAMI_HEADLESS,
+                        initial_cookies=cookies,
+                    ) as client:
+                        mapped_items = self._scrap_item(
+                            item.gcode,
+                            "gcode",
+                            browser_client=client,
+                        )
+                else:
+                    mapped_items = self._scrap_item(item.gcode, "gcode")
+            except Exception as e:
+                print(f"Detail enrichment failed for {item.gcode}: {e}")
+                print("Disabling detail enrichment for the rest of this run.")
+                self.detail_enrichment_disabled = True
+                mapped_items = []
+
+        if not mapped_items:
+            mapped_items.append(item.minify())
+            with open(join(OUTPUT_DIR, "_errors.txt"), "a") as f:
+                f.write(
+                    f"> {get_current_date()} - Error on gcode {item.gcode}\n",
+                )
+
+        for mapped_item in mapped_items:
+            mapped_item.release_date = item.releasedate
+
+        return mapped_items
 
     def run_scraping(self, args: AmiAmiQueryArgs) -> Tuple[str, str]:
         """
@@ -315,48 +594,64 @@ class AmiAmiScraper:
         else:
             print("> Data retrieved from file")
 
-        # Loop over items to scrap their details pages (start at next item from checkpoint)
-        for index in range(start_index + 1, len(amiami_items)):
-            item = amiami_items[index]
-
-            print(
-                f"({index + 1}/{len(amiami_items)}) On item {item.gcode}",
-                f"https://www.amiami.com/eng/detail/?gcode={item.gcode}",
-            )
-            # Scrap details for pre-owned or if requested
-            if item.is_preowned or self.always_scrap_details:
-                print("> Scraping item details...")
-                mapped_items = self._scrap_item(item.gcode, "gcode")
-
-                if not mapped_items:
-                    print("No items found, mapping from original data...")
-                    mapped_items.append(item.minify())
-                    with open(join(OUTPUT_DIR, "_errors.txt"), "a") as f:
-                        f.write(
-                            f"> {get_current_date()} - On file {timestamp}: "
-                            + f"Error at index {index} / gcode {item.gcode}\n",
-                        )
-
-                # Using date from general scraping as it is more precise
-                for mapped_item in mapped_items:
-                    mapped_item.release_date = item.releasedate
-                result_mapped.extend(mapped_items)
-
-            else:
-                print("> Skipping details scraping...")
-                result_mapped.append(item.minify())
-
-            print("Saving items...\n")
-
+        def save_checkpoint(current_index: int):
             with open(new_filepath, "w", encoding="utf-8") as f:
                 save_model_to_json(
                     f,
                     AmiAmiItemOutputDump(
-                        current_index=index,
+                        current_index=current_index,
                         items_length=len(result_mapped),
                         items=result_mapped,
                     ),
                 )
+
+        cookies: Optional[List[Dict]] = None
+        if self.transport == "browser" and self.browser_client is not None:
+            cookies = self.browser_client.export_cookies()
+
+        # Loop over items to scrap their details pages (start at next item from checkpoint)
+        for batch_start in range(start_index + 1, len(amiami_items), self.detail_workers):
+            batch_items = amiami_items[batch_start: batch_start + self.detail_workers]
+            batch_results: Dict[int, List[AmiAmiItemOutput]] = {}
+
+            detail_jobs = []
+            for offset, item in enumerate(batch_items):
+                index = batch_start + offset
+                print(
+                    f"({index + 1}/{len(amiami_items)}) On item {item.gcode}",
+                    f"https://www.amiami.com/eng/detail/?gcode={item.gcode}",
+                )
+                if (
+                    not self.detail_enrichment_disabled
+                    and ((item.is_preowned and self.fetch_preowned_details) or self.always_scrap_details)
+                ):
+                    detail_jobs.append((index, item))
+                else:
+                    batch_results[index] = [item.minify()]
+
+            if detail_jobs:
+                if self.detail_workers > 1:
+                    with ThreadPoolExecutor(max_workers=self.detail_workers) as executor:
+                        futures = {
+                            executor.submit(self._enrich_item_with_details, item, cookies): index
+                            for index, item in detail_jobs
+                        }
+                        for future in as_completed(futures):
+                            index = futures[future]
+                            batch_results[index] = future.result()
+                else:
+                    for index, item in detail_jobs:
+                        batch_results[index] = self._enrich_item_with_details(item, cookies)
+
+            for offset, _item in enumerate(batch_items):
+                index = batch_start + offset
+                result_mapped.extend(batch_results[index])
+                if (index + 1) % self.enrich_save_every == 0 or index == len(amiami_items) - 1:
+                    print(f"Saving checkpoint at item {index + 1}...\n")
+                    save_checkpoint(index)
+
+        if len(amiami_items) == 0:
+            save_checkpoint(start_index)
 
         # Save final filepath (if not there yet)
         if exists(DATA_LIST_FILE):

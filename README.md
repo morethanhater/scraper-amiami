@@ -32,6 +32,39 @@ uv pip install -r pyproject.toml
 uv python install 3.10
 ```
 
+## Windows quick start
+
+These scripts keep the project on a local Python `3.10` environment in `.venv` and do not run the app on your system Python `3.14`. They also keep `uv` cache and managed Python files inside the repo.
+
+1. Install `uv` once if you do not already have it.
+2. Run the setup script:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+```
+3. Start the scraper:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-scraper.ps1
+```
+4. Start the web UI in another terminal:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-web.ps1
+```
+5. Open [http://127.0.0.1:8000/web/index.html](http://127.0.0.1:8000/web/index.html)
+
+To remap only the latest raw file from `output` without rerunning scraping:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-enrich-latest.ps1
+```
+
+To build one self-contained HTML file from the latest mapped dataset:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\export-standalone-latest.ps1
+```
+
+The setup script will create `.env` from `.env.default` automatically if needed.
+The scraper now defaults to a browser-backed flow using your locally installed Chrome so it can attempt to pass AmiAmi's Cloudflare checks.
+If you want the old direct HTTP mode, set `AMIAMI_TRANSPORT = "direct"` in `.env`.
+
 ## Config
 
 ### 1. .env file
@@ -39,6 +72,19 @@ uv python install 3.10
 This project uses a .env file to centralize project variables. Currently, you don't need to add any credentials to run the project, so you only have to copy and rename the `.env.default` file to `.env`.
 
 > Note: You can also change there the number of items crawled per page, with the *ITEMS_PER_PAGE* variable.
+>
+> Browser-backed scraping options:
+> - `AMIAMI_TRANSPORT = "browser"` uses Chrome through Playwright
+> - `AMIAMI_BROWSER_CHANNEL = "chrome"` picks the installed browser channel
+> - `AMIAMI_HEADLESS = "false"` keeps the browser visible, which helps if Cloudflare asks for verification
+> - `AMIAMI_CRAWL_SLEEP_SECONDS` controls delay between `/items` page requests
+> - `AMIAMI_DETAIL_SLEEP_SECONDS` controls delay between `/item` detail requests
+> - `AMIAMI_FETCH_PREOWNED_DETAILS = "false"` skips slow per-item pre-owned detail enrichment for faster results
+> - `AMIAMI_PAGE_WORKERS` controls how many `/items` pages are fetched in parallel
+> - `AMIAMI_DETAIL_WORKERS` controls how many `/item` detail requests are fetched in parallel during enrichment
+> - `AMIAMI_MAX_RETRIES` controls how many times a request is retried after `429`
+> - `AMIAMI_RETRY_BASE_SECONDS` controls the exponential backoff base delay after `429`
+> - `AMIAMI_ENRICH_SAVE_EVERY` controls how often the mapped JSON checkpoint is rewritten during enrichment
 
 
 ## Architecture
@@ -56,7 +102,7 @@ There are 3 main directories in this project:
 To start the script, you need to run the `core/main.py` file.
 Using the uv manager, you can use the following command, that will also read the .env variables:
 ```sh
-uv run --env-file=.env core/main.py
+uv run --python 3.10 --env-file=.env core/main.py
 ```
 
 But before that, you need to specify which content you want to scrap.
@@ -91,7 +137,7 @@ But because the JavaScript must read local files, you need to start a local serv
 
 You can use the following command in the root directory:
 ```sh
-python -m http.server 8000
+uv run --python 3.10 python -m http.server 8000
 ```
 and then access the page at [localhost:8000/web/index.html](localhost:8000/web/index.html).
 
@@ -101,6 +147,10 @@ This file will be read in the JavaScript to load all listed files.
 That way, you can initiate various scrapings and display all the data in the same place. Alternatively, you can hide some results by removing their names in the listing file.
 
 Filters were listed at the beginning and are pretty straightforward.
+
+## Known issue
+
+As of April 3, 2026, AmiAmi is returning a Cloudflare challenge page (`HTTP 403`) to direct API requests. The scraper now uses a browser-backed flow by default and may open Chrome for you to complete a verification step before continuing.
 
 
 ## Credits

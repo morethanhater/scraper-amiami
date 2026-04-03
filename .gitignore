@@ -61,6 +61,8 @@ __pypackages__/
 # Environments
 .env
 .venv
+.uv-cache/
+.uv-python/
 env/
 venv/
 ENV/
@@ -78,5 +80,6 @@ cython_debug/
 ############################
 
 output/
+exports/
 web/data/
 web/ignored/

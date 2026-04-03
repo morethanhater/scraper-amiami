@@ -20,6 +20,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load JSON data
     const loadData = async () => {
+        if (Array.isArray(window.__AMIAMI_EMBEDDED_DATA__)) {
+            console.log(`Using embedded dataset, ${window.__AMIAMI_EMBEDDED_DATA__.length} items found.`);
+            jsonData = window.__AMIAMI_EMBEDDED_DATA__;
+            filteredData = jsonData;
+            refreshView();
+            return;
+        }
+
         // Read file listing JSON files to load
         const dataResponse = await fetch(folderPath + dataFilesPath);
         if (!dataResponse.ok) throw new Error('Error while loading the data file.');
@@ -52,6 +60,56 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshView();
     }
 
+    const getDiscountPercent = (item) => {
+        if (!item.full_price || !item.price || item.full_price <= 0 || item.price >= item.full_price) {
+            return 0;
+        }
+        return ((item.full_price - item.price) / item.full_price) * 100;
+    };
+
+    const createCell = (content) => {
+        const cell = document.createElement('td');
+        if (content instanceof Node) {
+            cell.appendChild(content);
+        } else {
+            cell.textContent = content;
+        }
+        return cell;
+    };
+
+    const createLink = (href, text) => {
+        const link = document.createElement('a');
+        link.href = href;
+        link.target = '_blank';
+        link.textContent = text || defaultValue;
+        return link;
+    };
+
+    const createSplitCell = (topContent, bottomContent) => {
+        const wrapper = document.createElement('span');
+        wrapper.className = 'split-cell';
+
+        const top = document.createElement('span');
+        top.className = 'top';
+        if (topContent instanceof Node) {
+            top.appendChild(topContent);
+        } else {
+            top.textContent = topContent;
+        }
+
+        const bottom = document.createElement('span');
+        bottom.className = 'bottom';
+        if (bottomContent instanceof Node) {
+            bottom.appendChild(bottomContent);
+        } else {
+            bottom.textContent = bottomContent;
+        }
+
+        wrapper.appendChild(top);
+        wrapper.appendChild(bottom);
+        return createCell(wrapper);
+    };
+
 
     // Display progressively the data
     const displayData = () => {
@@ -61,22 +119,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentBatch.forEach((item, index) => {
             const euroPrice = (item.price * yenToEuroMultiplier).toFixed(2);
+            const originalPrice = item.full_price || item.price;
+            const originalEuroPrice = (originalPrice * yenToEuroMultiplier).toFixed(2);
+            const discountPercent = getDiscountPercent(item).toFixed(1);
             const releaseDate = item.release_date ? new Date(item.release_date).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' }) : defaultValue;
 
-            const jancode = item.jancode ? `<a href="https://myfigurecollection.net/?keywords=${item.jancode}&_tb=item" target="_blank">${item.jancode}</a>` : defaultValue;
-
             const row = document.createElement('tr');
-            row.innerHTML = ''
-                + `<td>${index + currentIndex + 1} / ${filteredData.length}</td>`
-                + `<td><img src="${item.image_url}" alt="${item.name}" loading="lazy"></td>`
-                + `<td>${item.name}</td>`
-                + `<td><span class="split-cell"><span class="top"><a href="${item.gcode_url}" target="_blank">${item.gcode}</a></span><span class="bottom"><a href="${item.scode_url}" target="_blank">${item.scode}</a></span></span></td>`
-                + `<td><span class="split-cell"><span class="top">¥${item.price}</span><span class="bottom">${euroPrice} €</span></span></td>`
-                + `<td>${item.sale_status || defaultValue}</td>`
-                + `<td>${releaseDate}</td>`
-                + `<td>${jancode}</td>`
-                + `<td><span class="split-cell"><span class="top">${item.item_condition ? `ITEM: ${item.item_condition}` : 'New'}</span><span class="bottom">${item.box_condition ? `BOX: ${item.box_condition}` : 'New'}</span></span></td>`
-                + '';
+
+            const image = document.createElement('img');
+            image.src = item.image_url;
+            image.alt = item.name;
+            image.loading = 'lazy';
+
+            const jancodeCell = item.jancode
+                ? createCell(createLink(`https://myfigurecollection.net/?keywords=${item.jancode}&_tb=item`, item.jancode))
+                : createCell(defaultValue);
+
+            row.appendChild(createCell(`${index + currentIndex + 1} / ${filteredData.length}`));
+            row.appendChild(createCell(image));
+            row.appendChild(createCell(item.name));
+            row.appendChild(createSplitCell(
+                createLink(item.gcode_url, item.gcode),
+                createLink(item.scode_url, item.scode || defaultValue),
+            ));
+            row.appendChild(createSplitCell(`¥${item.price}`, `${euroPrice} €`));
+            row.appendChild(createSplitCell(`¥${originalPrice}`, `${originalEuroPrice} €`));
+            row.appendChild(createCell(`${discountPercent}%`));
+            row.appendChild(createCell(item.sale_status || defaultValue));
+            row.appendChild(createCell(releaseDate));
+            row.appendChild(jancodeCell);
+            row.appendChild(createSplitCell(
+                item.item_condition ? `ITEM: ${item.item_condition}` : 'New',
+                item.box_condition ? `BOX: ${item.box_condition}` : 'New',
+            ));
+
             tableBody.appendChild(row);
         });
 
@@ -151,13 +227,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (column === 'release_date') {
                 valueA = new Date(a.release_date);
                 valueB = new Date(b.release_date);
+            } else if (column === 'discount_percent') {
+                valueA = getDiscountPercent(a);
+                valueB = getDiscountPercent(b);
             } else if (column === 'item_condition') {
                 valueA = itemConditionOrder.indexOf(a.item_condition);
                 valueB = itemConditionOrder.indexOf(b.item_condition);
 
                 // Case when item condition is unknown
-                if (valueA === -1) valueA = order.length;
-                if (valueB === -1) valueB = order.length;
+                if (valueA === -1) valueA = itemConditionOrder.length;
+                if (valueB === -1) valueB = itemConditionOrder.length;
             }
 
             if (direction === 'asc') {
