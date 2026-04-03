@@ -108,35 +108,52 @@ There are 3 main directories in this project:
 
 ### 1. Scraping
 
-To start the script, you need to run the `core/main.py` file.
-Using the uv manager, you can use the following command, that will also read the .env variables:
+The main entry point is [core/main.py](C:\Users\penky\Documents\GitHub\scraper-amiami\core\main.py).
+The recommended way to run it on Windows is still:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-scraper.ps1
+```
+
+If you want to run the Python entry point directly with `uv`, use:
 ```sh
 uv run --python 3.10 --env-file=.env core/main.py
 ```
 
-But before that, you need to specify which content you want to scrap.
-In the `core/main.py` file, you can specify a list of **AmiAmiQueryArgs** in the *batch_args* variable. Each of those will represent a scraping process, due to the fact that some parameters are incompatible.
-For example, you can specify
+By default, [core/main.py](C:\Users\penky\Documents\GitHub\scraper-amiami\core\main.py) currently runs one batch for:
+- `ItemCategory2Enum.BISHOUJO_FIGURES`
+- `BACK_ORDER`
+- `NEW`
+- `PRE_ORDER`
+- `PRE_OWNED`
+
+If you want to change what gets scraped, edit the `batch_args` list in [core/main.py](C:\Users\penky\Documents\GitHub\scraper-amiami\core\main.py). Each `AmiAmiQueryArgs` entry represents one scraping batch, which is useful because some AmiAmi query combinations are incompatible.
+
+For example:
 ```py
 batch_args: List[AmiAmiQueryArgs] = [
     AmiAmiQueryArgs(
         num_pages=5,
         types=[ItemTypeEnum.NEW],
-        category2=ItemCategory2Enum.CHARACTER,
+        category2=ItemCategory2Enum.CHARACTER_FIGURES,
     ),
     AmiAmiQueryArgs(
         types=[ItemTypeEnum.PRE_ORDER, ItemTypeEnum.PRE_OWNED],
-        category2=ItemCategory2Enum.FOREIGN,
+        category2=ItemCategory2Enum.FOREIGN_FIGURES,
     ),
 ]
 ```
-that will initiate 2 scrapings. The first one will get 5 pages of new character figures, and the second will get all pages of foreign (western) pre-order and pre-owned figures.
+That will initiate 2 scraping batches. The first gets 5 pages of new character figures, and the second gets all pages of foreign pre-order and pre-owned figures.
 
-Each of them will generate two files:
-- the first one in the `output` directory, which will be the raw data dump from the API
-- the second one in the `web/data` directory, which will represent filtered, enriched and usable data to display
+Each batch generates:
+- one raw dump in `output`
+- one mapped/enriched dataset in `web/data`
 
-Displaying and real-time filtering can be done using the webview.
+If you already have a raw dump and only want to rerun the mapping/enrichment phase, use:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-enrich-latest.ps1
+```
+
+Displaying and real-time filtering can then be done using the webview.
 
 
 ### 2. Web view
