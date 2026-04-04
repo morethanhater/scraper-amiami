@@ -1,7 +1,4 @@
 # AmiAmi scraper
-Original forked from https://github.com/relhamdi/scraper-amiami
-
-Used AI to implement changes afterwards.
 
 Scraping process for the website AmiAmi.
 
@@ -181,6 +178,7 @@ As of April 3, 2026, AmiAmi is returning a Cloudflare challenge page (`HTTP 403`
 
 ## Credits
 
+Thanks to relhamdi's [repo](https://github.com/relhamdi/scraper-amiami) for the original project of this scrapper
 Thanks to marvinody's [repo](https://github.com/marvinody/amiami) for giving me the idea to use curl-cffi.
 
 
