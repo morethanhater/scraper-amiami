@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentIndex: 0,
         jsonData: [],
         filteredData: [],
-        currentSort: { column: 'name', direction: 'asc' },
+        currentSort: { column: null, direction: null },
     };
 
     let searchInputTimeoutId;
@@ -129,6 +129,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const parsePriceInput = (value, fallback) => parseFloat(value.replace(',', '.')) || fallback;
+
+    const assignOriginalIndexes = (items, startIndex = 0) => {
+        items.forEach((item, index) => {
+            item.__originalIndex = startIndex + index;
+        });
+        return items;
+    };
 
     const matchesSearchQuery = (item, query) => (
         item.name.toLowerCase().includes(query)
@@ -263,6 +270,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const getComparableValue = (item, column) => {
+        if (!column) {
+            return item.__originalIndex ?? 0;
+        }
         if (column === 'release_date') {
             return new Date(item.release_date);
         }
@@ -277,9 +287,15 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const sortData = (column, direction) => {
+        const effectiveColumn = direction ? column : null;
+
         state.filteredData.sort((a, b) => {
-            const valueA = getComparableValue(a, column);
-            const valueB = getComparableValue(b, column);
+            const valueA = getComparableValue(a, effectiveColumn);
+            const valueB = getComparableValue(b, effectiveColumn);
+
+            if (!direction) {
+                return valueA > valueB ? 1 : valueA < valueB ? -1 : 0;
+            }
 
             if (direction === 'asc') {
                 return valueA > valueB ? 1 : valueA < valueB ? -1 : 0;
@@ -294,21 +310,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const updateSortHeaders = (direction, activeHeader) => {
         elements.sortableHeaders.forEach(header => header.classList.remove('sorted-asc', 'sorted-desc'));
-        activeHeader.classList.add(direction === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        if (activeHeader && direction) {
+            activeHeader.classList.add(direction === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        }
+    };
+
+    const getNextSortDirection = (column) => {
+        if (state.currentSort.column !== column || state.currentSort.direction === null) {
+            return 'desc';
+        }
+        if (state.currentSort.direction === 'desc') {
+            return 'asc';
+        }
+        return null;
     };
 
     const setupSort = (column, headerElement) => {
-        const direction = state.currentSort.column === column && state.currentSort.direction === 'asc' ? 'desc' : 'asc';
-        state.currentSort = { column, direction };
+        const direction = getNextSortDirection(column);
+        state.currentSort = {
+            column: direction ? column : null,
+            direction,
+        };
         sortData(column, direction);
-        updateSortHeaders(direction, headerElement);
+        updateSortHeaders(direction, direction ? headerElement : null);
     };
 
     const refreshView = () => {
         state.filteredData = filterData();
         state.currentIndex = 0;
-        clearTable();
-        displayData();
+        sortData(state.currentSort.column, state.currentSort.direction);
     };
 
     const scheduleRefresh = (timeoutRefSetter) => {
@@ -434,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         console.log(`Using embedded dataset, ${window.__AMIAMI_EMBEDDED_DATA__.length} items found.`);
-        state.jsonData = window.__AMIAMI_EMBEDDED_DATA__;
+        state.jsonData = assignOriginalIndexes(window.__AMIAMI_EMBEDDED_DATA__);
         state.filteredData = state.jsonData;
         refreshView();
         return true;
@@ -469,7 +499,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             for (const filename of filenames) {
                 const data = await loadJsonFile(filename);
-                state.jsonData = state.jsonData.concat(data.items);
+                const indexedItems = assignOriginalIndexes(data.items, state.jsonData.length);
+                state.jsonData = state.jsonData.concat(indexedItems);
             }
         } catch (error) {
             console.error('Error while loading JSON files:', error);
