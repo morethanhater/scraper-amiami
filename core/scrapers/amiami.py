@@ -143,7 +143,7 @@ class AmiAmiScraper:
         return None
 
     def _build_output_filename(self, timestamp: str, args: AmiAmiQueryArgs) -> str:
-        return f"{timestamp}-{args.stringify()}.json"
+        return f"{timestamp}-scrapped_items.json"
 
     def _build_mapped_filename(self, timestamp: str) -> str:
         return f"{timestamp}-mapped_items.json"
