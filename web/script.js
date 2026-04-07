@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const DEFAULT_VALUE = 'N/A';
-    const YEN_TO_EURO_MULTIPLIER = 0.006106; // As of 2025-05-09
+    const YEN_TO_EURO_MULTIPLIER = 0.005423; // As of 2026-04-06
     const FOLDER_PATH = 'data/';
     const DATA_FILES_PATH = '_data_files.txt';
     const BATCH_SIZE = 50;

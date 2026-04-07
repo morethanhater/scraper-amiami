@@ -78,3 +78,52 @@ function Assert-EnvFile {
         Copy-Item (Join-Path $RepoRoot ".env.default") $envPath
     }
 }
+
+function Get-EnvValue {
+    param(
+        [string]$EnvPath,
+        [string]$Key,
+        [string]$DefaultValue = ""
+    )
+
+    if (-not (Test-Path $EnvPath)) {
+        return $DefaultValue
+    }
+
+    foreach ($line in Get-Content $EnvPath) {
+        if ($line -match "^\s*$([regex]::Escape($Key))\s*=\s*""(.*)""\s*$") {
+            return $matches[1]
+        }
+    }
+
+    return $DefaultValue
+}
+
+function Set-EnvValue {
+    param(
+        [string]$EnvPath,
+        [string]$Key,
+        [string]$Value
+    )
+
+    $lines = @()
+    if (Test-Path $EnvPath) {
+        $lines = Get-Content $EnvPath
+    }
+
+    $escapedKey = [regex]::Escape($Key)
+    $updated = $false
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index] -match "^\s*$escapedKey\s*=") {
+            $lines[$index] = "$Key = ""$Value"""
+            $updated = $true
+            break
+        }
+    }
+
+    if (-not $updated) {
+        $lines += "$Key = ""$Value"""
+    }
+
+    Set-Content -Path $EnvPath -Value $lines
+}

@@ -40,15 +40,19 @@ These scripts keep the project on a local Python `3.10` environment in `.venv` a
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 ```
-2. Start the scraper:
+2. Refresh the available AmiAmi scrape options:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-discover-options.ps1
+```
+3. Start the scraper:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-scraper.ps1
 ```
-3. Start the web UI in another terminal:
+4. Start the web UI in another terminal:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-web.ps1
 ```
-4. Open [http://127.0.0.1:8000/web/index.html](http://127.0.0.1:8000/web/index.html)
+5. Open [http://127.0.0.1:8000/web/index.html](http://127.0.0.1:8000/web/index.html)
 
 To remap only the latest raw file from `output` without rerunning scraping:
 ```powershell
@@ -70,12 +74,13 @@ For users who prefer double-click launchers, the same actions are available as `
 The setup script will install `uv` automatically if it is missing, then create `.env` from `.env.default` and build the local Python `3.10` environment.
 The scraper now defaults to a browser-backed flow using your locally installed Chrome so it can attempt to pass AmiAmi's Cloudflare checks.
 If you want the old direct HTTP mode, set `AMIAMI_TRANSPORT = "direct"` in `.env`.
+Before an interactive scrape session, `run-discover-options.ps1` can refresh the currently available AmiAmi category and type choices and sync them into `.env`, `.env.default`, and `output/amiami-discovery.json`.
 
 ## Config
 
 ### 1. .env file
 
-This project uses a .env file to centralize project variables. Currently, you don't need to add any credentials to run the project, so you only have to copy and rename the `.env.default` file to `.env`.
+This project uses a `.env` file to centralize project variables. Currently, you don't need to add any credentials to run the project, so you only have to copy and rename the `.env.default` file to `.env`.
 
 > Note: You can also change there the number of items crawled per page, with the *ITEMS_PER_PAGE* variable.
 >
@@ -91,6 +96,24 @@ This project uses a .env file to centralize project variables. Currently, you do
 > - `AMIAMI_MAX_RETRIES` controls how many times a request is retried after `429`
 > - `AMIAMI_RETRY_BASE_SECONDS` controls the exponential backoff base delay after `429`
 > - `AMIAMI_ENRICH_SAVE_EVERY` controls how often the mapped JSON checkpoint is rewritten during enrichment
+
+For scraper batch selection, the `.env` file now also stores:
+- current scrape settings:
+  - `AMIAMI_SCRAPE_KEYWORD`
+  - `AMIAMI_SCRAPE_NUM_PAGES`
+  - `AMIAMI_SCRAPE_TYPES`
+  - `AMIAMI_SCRAPE_CATEGORY1`
+  - `AMIAMI_SCRAPE_CATEGORY2`
+  - `AMIAMI_SCRAPE_CATEGORY3`
+  - `AMIAMI_SCRAPE_SORT_KEY`
+- currently available choices for the interactive prompt:
+  - `AMIAMI_AVAILABLE_SCRAPE_TYPES`
+  - `AMIAMI_AVAILABLE_SCRAPE_CATEGORY1`
+  - `AMIAMI_AVAILABLE_SCRAPE_CATEGORY2`
+  - `AMIAMI_AVAILABLE_SCRAPE_CATEGORY3`
+  - `AMIAMI_AVAILABLE_SCRAPE_SORT_KEY`
+
+Running `scripts/run-discover-options.ps1` refreshes those available values from AmiAmi when possible and also updates the human-readable `# Available values:` blocks in both `.env` and `.env.default`.
 
 
 ## Architecture
@@ -111,35 +134,34 @@ The recommended way to run it on Windows is still:
 powershell -ExecutionPolicy Bypass -File .\scripts\run-scraper.ps1
 ```
 
+The recommended setup before a scrape run is:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-discover-options.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\run-scraper.ps1
+```
+
+`run-scraper.ps1` now works interactively:
+- it shows the current scraper settings from `.env`
+- it asks whether to keep them or edit them
+- if you choose to edit them, it lets you select types, categories, and sort mode from numbered console lists
+- any changes are saved back into `.env` and become the new defaults for the next run
+
 If you want to run the Python entry point directly with `uv`, use:
 ```sh
 uv run --python 3.10 --env-file=.env core/main.py
 ```
 
-By default, [core/main.py](C:\Users\penky\Documents\GitHub\scraper-amiami\core\main.py) currently runs one batch for:
-- `ItemCategory2Enum.BISHOUJO_FIGURES`
-- `BACK_ORDER`
-- `NEW`
-- `PRE_ORDER`
-- `PRE_OWNED`
+The current [core/main.py](C:\Users\penky\Documents\GitHub\scraper-amiami\core\main.py) reads one scraper batch from `.env`, not from a hardcoded `batch_args` block. By default, that batch is:
+- `AMIAMI_SCRAPE_CATEGORY2 = "BISHOUJO_FIGURES"`
+- `AMIAMI_SCRAPE_TYPES = "BACK_ORDER,NEW,PRE_ORDER,PRE_OWNED"`
+- `AMIAMI_SCRAPE_SORT_KEY = "RECENT_UPDATE"`
 
-If you want to change what gets scraped, edit the `batch_args` list in [core/main.py](C:\Users\penky\Documents\GitHub\scraper-amiami\core\main.py). Each `AmiAmiQueryArgs` entry represents one scraping batch, which is useful because some AmiAmi query combinations are incompatible.
+If you want to change what gets scraped, the normal workflow is no longer "edit `main.py` manually". Instead:
+1. refresh available options with `run-discover-options.ps1`
+2. run `run-scraper.ps1`
+3. choose new values interactively in the console
 
-For example:
-```py
-batch_args: List[AmiAmiQueryArgs] = [
-    AmiAmiQueryArgs(
-        num_pages=5,
-        types=[ItemTypeEnum.NEW],
-        category2=ItemCategory2Enum.CHARACTER_FIGURES,
-    ),
-    AmiAmiQueryArgs(
-        types=[ItemTypeEnum.PRE_ORDER, ItemTypeEnum.PRE_OWNED],
-        category2=ItemCategory2Enum.FOREIGN_FIGURES,
-    ),
-]
-```
-That will initiate 2 scraping batches. The first gets 5 pages of new character figures, and the second gets all pages of foreign pre-order and pre-owned figures.
+You can still run `core/main.py` directly with `uv`; it will use whatever values are currently stored in `.env`.
 
 Each batch generates:
 - one raw dump in `output`

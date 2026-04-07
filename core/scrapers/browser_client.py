@@ -85,6 +85,22 @@ class BrowserJsonClient:
 
         return json_loads(response["text"])
 
+    def get_html(self, url: str, headers: Optional[Dict[str, str]] = None) -> str:
+        response = self._fetch_html(url, headers or {})
+        if response["status"] == 403 and "Just a moment" in response["text"]:
+            self._solve_html_challenge(url)
+            response = self._fetch_html(url, headers or {})
+        if response["status"] == 403 and "Sorry, you have been blocked" in response["text"]:
+            raise RuntimeError(
+                "HTTP Error 403: AmiAmi blocked this browser session. "
+                "Wait for the block to clear, lower concurrency, and rerun with a visible browser."
+            )
+
+        if response["status"] >= 400:
+            raise RuntimeError(f"HTTP Error {response['status']}: {response['text'][:200]}")
+
+        return response["html"]
+
     def export_cookies(self) -> List[Dict]:
         if self._context is None:
             raise RuntimeError("Browser context is not initialized")
@@ -111,11 +127,37 @@ class BrowserJsonClient:
         text = self.page.locator("body").inner_text()
         return {"status": response.status, "text": text}
 
+    def _fetch_html(self, url: str, headers: Dict[str, str]) -> Dict[str, str]:
+        if self._context is None:
+            raise RuntimeError("Browser context is not initialized")
+
+        browser_headers = {
+            key: value for key, value in headers.items() if key.lower() != "user-agent"
+        }
+        self._context.set_extra_http_headers(browser_headers)
+        response = self.page.goto(url, wait_until="domcontentloaded")
+        self.page.wait_for_timeout(1000)
+
+        html = self.page.content()
+        text = self.page.locator("body").inner_text()
+        if response is None:
+            return {"status": 0, "text": text, "html": html}
+
+        return {"status": response.status, "text": text, "html": html}
+
     def _solve_challenge(self, url: str, params: Dict[str, str]):
         target_url = f"{url}?{urlencode(params)}"
         print("Cloudflare challenge detected.")
         print("A browser window has been opened. Complete any verification there, then press Enter here.")
         self.page.goto(target_url, wait_until="domcontentloaded")
+        input()
+        self.page.goto(self.start_url, wait_until="domcontentloaded")
+        self.page.wait_for_timeout(1000)
+
+    def _solve_html_challenge(self, url: str):
+        print("Cloudflare challenge detected.")
+        print("A browser window has been opened. Complete any verification there, then press Enter here.")
+        self.page.goto(url, wait_until="domcontentloaded")
         input()
         self.page.goto(self.start_url, wait_until="domcontentloaded")
         self.page.wait_for_timeout(1000)
